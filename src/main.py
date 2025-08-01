@@ -1,6 +1,7 @@
 from textnode import TextNode, TextType
 import os
 import shutil
+import sys
 from pathlib import Path
 from Inline_markdown import markdown_to_blocks,split_nodes_link,split_nodes_image,split_nodes_delimiter,text_to_textnodes
 from Block_type import markdown_to_html_node
@@ -31,30 +32,34 @@ def copy_static_files(source: str, destination: str):
 
     recursive_copy(source, destination)
 
-def generate_page(from_path, template_path, dest_path):
+def generate_page(from_path, template_path, dest_path, basepath="/"):
     print(f" * Generating page: {from_path} -> {dest_path}")
+
     with open(from_path, "r", encoding="utf-8") as from_file:
         markdown_content = from_file.read()
 
     with open(template_path, "r", encoding="utf-8") as template_file:
         template = template_file.read()
 
-    try:
-        title = extract_title(markdown_content)
-        print(f"   Extracted title: {title}")
-    except ValueError:
-        print(f"   Warning: No H1 title found in {from_path}, using 'Untitled Page'")
-        title = "Untitled Page"
-
     node = markdown_to_html_node(markdown_content)
     html = node.to_html()
 
+    title = extract_title(markdown_content)
     template = template.replace("{{ Title }}", title)
     template = template.replace("{{ Content }}", html)
 
-    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    # Replace href="/ and src="/ with href="{basepath} and src="{basepath}
+    # Note: if basepath is just '/', this will not change anything
+    if basepath != "/":
+        template = template.replace('href="/', f'href="{basepath}')
+        template = template.replace('src="/', f'src="{basepath}')
+
+    dest_dir_path = os.path.dirname(dest_path)
+    if dest_dir_path != "":
+        os.makedirs(dest_dir_path, exist_ok=True)
     with open(dest_path, "w", encoding="utf-8") as to_file:
         to_file.write(template)
+
 
 def extract_title(md):
     lines = md.splitlines()
@@ -67,18 +72,22 @@ def extract_title(md):
 
 
 
-def generate_pages_recursive(dir_path_content, template_path, dest_dir_path):
+def generate_pages_recursive(dir_path_content, template_path, dest_dir_path, basepath="/"):
     print(f"Generating pages from: {dir_path_content}")
     for root, dirs, files in os.walk(dir_path_content):
         for file_name in files:
             if file_name.endswith(".md"):
                 from_path = os.path.join(root, file_name)
+
                 rel_path = os.path.relpath(from_path, dir_path_content)
                 rel_path_html = os.path.splitext(rel_path)[0] + ".html"
                 dest_path = os.path.join(dest_dir_path, rel_path_html)
+
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
                 print(f"Generating page from {from_path} to {dest_path}")
-                generate_page(from_path, template_path, dest_path)
+                generate_page(from_path, template_path, dest_path, basepath)
+
 
 
 
@@ -95,13 +104,23 @@ def copy_files_recursive(source_dir_path, dest_dir_path):
         else:
             copy_files_recursive(from_path, dest_path)
 
-dir_path_static = "./static"
-dir_path_public = "./public"
-dir_path_content = "./content"
-template_path = "./template.html"
 
 
 def main():
+    basepath = "/"
+    if len(sys.argv) > 1:
+        basepath = sys.argv[1]
+        if not basepath.endswith("/"):
+            basepath += "/"
+
+    print(f"Using basepath: {basepath}")
+
+    # rest of your setup paths
+    dir_path_static = "./static"
+    dir_path_public = "./docs"
+    dir_path_content = "./content"
+    template_path = "./template.html"
+
     print("Deleting public directory...")
     if os.path.exists(dir_path_public):
         shutil.rmtree(dir_path_public)
@@ -110,7 +129,7 @@ def main():
     copy_files_recursive(dir_path_static, dir_path_public)
 
     print("Generating content...")
-    generate_pages_recursive(dir_path_content, template_path, dir_path_public)
+    generate_pages_recursive(dir_path_content, template_path, dir_path_public, basepath)
 
 if __name__ == "__main__":
     main()
